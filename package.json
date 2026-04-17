@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "test:win": "set NODE_OPTIONS=--experimental-vm-modules&& jest --runInBand"
   },
   "keywords": [
@@ -27,9 +27,10 @@
     "sharp": "^0.33.0"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
+    "form-data": "^4.0.0",
     "jest": "^29.7.0",
-    "supertest": "^7.0.0",
     "mongodb-memory-server": "^10.1.0",
-    "form-data": "^4.0.0"
+    "supertest": "^7.0.0"
   }
 }
