@@ -10,6 +10,39 @@ const THUMB_DIR = path.join(UPLOAD_DIR, 'thumbnails');
 
 const fsPromises = fs.promises;
 
+// FIX 1: Ensure upload and thumbnail directories exist on startup
+await fsPromises.mkdir(UPLOAD_DIR, { recursive: true });
+await fsPromises.mkdir(THUMB_DIR, { recursive: true });
+
+const ALLOWED_SORT_FIELDS = ['uploadDate', 'size', 'width', 'height', 'originalName', 'mimetype'];
+
+function parseTags(input) {
+  if (!input) return [];
+
+  if (Array.isArray(input)) {
+    return input
+      .map(tag => String(tag).trim())
+      .filter(Boolean)
+      .slice(0, 50);
+  }
+
+  if (typeof input === 'string') {
+    return input
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(Boolean)
+      .slice(0, 50);
+  }
+
+  return [];
+}
+
+// FIX 2: Safe Content-Disposition header using RFC 5987 encoding
+function contentDisposition(filename) {
+  const encoded = encodeURIComponent(filename).replace(/'/g, '%27');
+  return `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`;
+}
+
 /**
  * Upload image
  */
@@ -23,18 +56,17 @@ export async function uploadImage(req, res, next) {
     const filepath = path.join(UPLOAD_DIR, filename);
 
     const { width, height } = await getImageDimensions(filepath);
-
     const thumbnailFilename = await generateThumbnail(filename);
 
     const description = req.body.description || '';
+    const tags = parseTags(req.body.tags);
 
-    let tags = [];
-    if (req.body.tags) {
-      tags = req.body.tags
-        .split(',')
-        .map(t => t.trim())
-        .filter(Boolean);
-    }
+    // FIX 3: Warn caller if tags were truncated
+    const rawTags = parseTags(req.body.tags);
+    const inputTagCount = Array.isArray(req.body.tags)
+      ? req.body.tags.length
+      : (req.body.tags || '').split(',').length;
+    const tagsWereTruncated = inputTagCount > 50;
 
     const image = await Image.create({
       originalName: originalname,
@@ -45,10 +77,13 @@ export async function uploadImage(req, res, next) {
       height,
       thumbnailFilename,
       description,
-      tags,
+      tags: rawTags,
     });
 
-    return res.status(201).json(image);
+    return res.status(201).json({
+      ...image.toObject(),
+      ...(tagsWereTruncated && { warning: 'Tags were truncated to 50 maximum' }),
+    });
   } catch (error) {
     next(error);
   }
@@ -64,12 +99,16 @@ export async function listImages(req, res, next) {
       limit = 10,
       search,
       mimetype,
+      tags,                         // FIX 4: Added tag filtering support
       sortBy = 'uploadDate',
       sortOrder = 'desc',
     } = req.query;
 
-    page = Number(page) || 1;
-    limit = Math.min(Number(limit) || 10, 50);
+    page = Math.max(Number(page) || 1, 1);
+    limit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+
+    sortBy = ALLOWED_SORT_FIELDS.includes(sortBy) ? sortBy : 'uploadDate';
+    const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
     const query = {};
 
@@ -81,13 +120,29 @@ export async function listImages(req, res, next) {
       query.mimetype = mimetype;
     }
 
-    const skip = (page - 1) * limit;
+    // FIX 4: Filter by tags if provided
+    if (tags) {
+      const tagList = parseTags(tags);
+      if (tagList.length > 0) {
+        query.tags = { $all: tagList };
+      }
+    }
 
     const total = await Image.countDocuments(query);
     const pages = Math.ceil(total / limit);
 
+    // FIX 5: Skip DB query if no results
+    if (total === 0) {
+      return res.status(200).json({
+        data: [],
+        meta: { total: 0, page, limit, pages: 0, totalSize: 0 },
+      });
+    }
+
+    const skip = (page - 1) * limit;
+
     const images = await Image.find(query)
-      .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
+      .sort({ [sortBy]: sortDirection })
       .skip(skip)
       .limit(limit);
 
@@ -155,13 +210,17 @@ export async function downloadImage(req, res, next) {
       });
     }
 
-    res.setHeader('Content-Type', image.mimetype);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${image.originalName}"`
-    );
+    const fileStats = await fsPromises.stat(filepath);
 
-    return res.sendFile(filepath);
+    res.setHeader('Content-Type', image.mimetype);
+    res.setHeader('Content-Length', fileStats.size);
+    // FIX 2: Safe Content-Disposition header
+    res.setHeader('Content-Disposition', contentDisposition(image.originalName));
+
+    // FIX 6: Pass error callback to sendFile
+    return res.sendFile(filepath, (err) => {
+      if (err) next(err);
+    });
   } catch (error) {
     next(error);
   }
@@ -190,9 +249,15 @@ export async function downloadThumbnail(req, res, next) {
       });
     }
 
-    res.setHeader('Content-Type', 'image/jpeg');
+    const thumbnailStats = await fsPromises.stat(thumbnailPath);
 
-    return res.sendFile(thumbnailPath);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Length', thumbnailStats.size);
+
+    // FIX 6: Pass error callback to sendFile
+    return res.sendFile(thumbnailPath, (err) => {
+      if (err) next(err);
+    });
   } catch (error) {
     next(error);
   }
@@ -214,14 +279,12 @@ export async function deleteImage(req, res, next) {
     const filepath = path.join(UPLOAD_DIR, image.filename);
     const thumbnailPath = path.join(THUMB_DIR, image.thumbnailFilename);
 
-    // delete original
     try {
       await fsPromises.unlink(filepath);
     } catch (err) {
       if (err.code !== 'ENOENT') throw err;
     }
 
-    // delete thumbnail
     try {
       await fsPromises.unlink(thumbnailPath);
     } catch (err) {
