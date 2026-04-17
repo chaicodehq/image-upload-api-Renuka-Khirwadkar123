@@ -9,7 +9,7 @@ async function start() {
     // TODO: Read MONGO_URI from process.env, default to "mongodb://localhost:27017/image_upload_api"
     const uri = process.env.MONGO_URI || "mongodb://localhost:27017/image_upload_api";
 
-    await connectDB(uri);
+    await connectDB(uri).then(() => console.log(`mongodb connection success ${uri}`));
     const app = createApp();
 
     app.listen(port, () => {

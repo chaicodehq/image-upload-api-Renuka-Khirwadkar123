@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import multer from 'multer';
 import {
   uploadImage,
   listImages,
@@ -11,24 +10,25 @@ import {
 import { upload } from '../middlewares/upload.middleware.js';
 import { validateObjectId } from '../middlewares/validateObjectId.middleware.js';
 
+/**
+ * TODO: Define image routes
+ *
+ * POST   /                  → uploadImage (use upload.single('image') middleware)
+ * GET    /                  → listImages
+ * GET    /:id               → getImage (use validateObjectId middleware)
+ * GET    /:id/download      → downloadImage (use validateObjectId middleware)
+ * GET    /:id/thumbnail     → downloadThumbnail (use validateObjectId middleware)
+ * DELETE /:id               → deleteImage (use validateObjectId middleware)
+ */
+
 const router = Router();
 
-// FIX: Wrap upload.single() in a callback to properly forward multer errors to errorHandler
-router.post('/', (req, res, next) => {
-  upload.single('image')(req, res, (err) => {
-    if (err) return next(err);
-    next();
-  });
-}, uploadImage);
-
-router.get('/', listImages);
-
-router.get('/:id', validateObjectId, getImage);
-
-router.get('/:id/download', validateObjectId, downloadImage);
-
-router.get('/:id/thumbnail', validateObjectId, downloadThumbnail);
-
-router.delete('/:id', validateObjectId, deleteImage);
+// Your routes here
+router.post("/", upload.single("image"), uploadImage);
+router.get("/", listImages);
+router.get("/:id", validateObjectId, getImage);
+router.get("/:id/download", validateObjectId, downloadImage);
+router.get("/:id/thumbnail", validateObjectId, downloadThumbnail);
+router.delete("/:id", validateObjectId, deleteImage);
 
 export default router;

@@ -1,12 +1,15 @@
-import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import imageRoutes from './routes/image.routes.js';
-import { errorHandler } from './middlewares/error.middleware.js';
-import { notFound } from './middlewares/notFound.middleware.js';
+import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import imageRoutes from "./routes/image.routes.js";
+import { errorHandler } from "./middlewares/error.middleware.js";
+import { notFound } from "./middlewares/notFound.middleware.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// console.log(__dirname)
+
+const dirPath = path.join(process.cwd(), "uploads/thumbnails/");
 
 /**
  * TODO: Create Express app
@@ -24,33 +27,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * 8. Return app
  */
 export function createApp() {
-  // 1
-  const app = express();
+  // Your code here
+  try {
+    const app = express();
 
-  // 2
-  app.use(express.json());
+    app.use(express.json());
 
-  // 3
-  const uploadsDir = path.join(__dirname, '../../uploads');
-  const thumbnailsDir = path.join(uploadsDir, 'thumbnails');
+    fs.mkdirSync(dirPath, { recursive: true });
 
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  fs.mkdirSync(thumbnailsDir, { recursive: true });
+    app.get("/health", (req, res) => {
+      return res.status(200).json({ ok: true });
+    });
 
-  // 4
-  app.get('/health', (req, res) => {
-    res.json({ ok: true });
-  });
+    app.use("/api/images", imageRoutes);
 
-  // 5
-  app.use('/api/images', imageRoutes);
+    app.use(notFound);
+    app.use(errorHandler);
 
-  // 6
-  app.use(notFound);
-
-  // 7
-  app.use(errorHandler);
-
-  // 8
-  return app;
+    return app;
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
 }
